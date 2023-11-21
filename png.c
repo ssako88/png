@@ -17,6 +17,8 @@
 #include <errno.h>
 #include <zlib.h>
 
+static uint32_t host2network(uint32_t n);
+static uint32_t network2host(uint32_t n);
 static unsigned int pngcrc(const char *, size_t);
 static unsigned int pngcrc2(unsigned int, const char *, size_t);
 static void init_table(unsigned int *);
@@ -28,6 +30,24 @@ static int read_pngsection(FILE *f, const char *name, char **data, size_t *lengt
 static uint8_t filterAverage(uint8_t left, uint8_t up);
 static uint8_t paethPredictor(uint8_t left, uint8_t up, uint8_t upLeft);
 static int pngTrueColorAlpha(char *imgbuf, char *buf, int w, int h);
+
+static uint32_t host2network(uint32_t n){
+	uint32_t m;
+	uint8_t *p = (uint8_t *)&m;
+	p[0] = (n >> 24) & 0xff;
+	p[1] = (n >> 16) & 0xff;
+	p[2] = (n >> 8) & 0xff;
+	p[3] = n & 0xff;
+	return m;
+}
+
+static uint32_t network2host(uint32_t n){
+	uint8_t *p = (uint8_t *)&n;
+	return (((uint32_t)p[0]) << 24) |
+		(((uint32_t)p[1]) << 16) |
+		(((uint32_t)p[2]) << 8) |
+		(uint32_t)p[3];
+}
 
 static unsigned int pngcrc(const char *data, size_t length) {
 	unsigned int c = 0xffffffff, table[256];
@@ -89,14 +109,14 @@ static int read_pngheader(FILE *f){
 static void write_pngsection(FILE *o, const char *name, const char *data, size_t length){
 	unsigned int n;
 
-	n = (unsigned int)htonl(length);
+	n = host2network(length);
 	fwrite(&n, sizeof(int), 1, o);
 	fwrite(name, sizeof(char), strlen(name), o);
 	if (length)
 		fwrite(data, sizeof(char), length, o);
 	n = pngcrc(name, strlen(name));
 	n = pngcrc2(n, data, length);
-	n = htonl(n);
+	n = host2network(n);
 	fwrite(&n, sizeof(int), 1, o);
 }
 
@@ -109,7 +129,7 @@ static int read_pngsection(FILE *f, const char *name, char **data, size_t *lengt
 	while (1){
 		if (fread(&n, sizeof(uint32_t), 1, f) < 1)
 			return 0;
-		l = (uint32_t)ntohl(n);
+		l = network2host(n);
 		if (fread(s, sizeof(char), 4, f) < 4)
 			return 0;
 		s[4] = 0;
@@ -171,9 +191,9 @@ int saveAsPNG(const char *fname, pngimage img){
 	memset(info, 0, 16);
 	w = img.w;
 	h = img.h;
-	n = htonl(w);
+	n = host2network(w);
 	memcpy(info, &n, 4);
-	n = htonl(h);
+	n = host2network(h);
 	memcpy(info + 4, &n, 4);
 	info[8] = 8; // 8bit color component
 	info[9] = 6; // True-color + alpha (RGBA)
@@ -391,9 +411,9 @@ pngimage getFromPNG(const char *fname){
 		goto FAIL;
 	phase = 2;
 	memcpy(&n, info, 4);
-	w = ntohl(n);
+	w = network2host(n);
 	memcpy(&n, info + 4, 4);
-	h = ntohl(n);
+	h = network2host(n);
 	if (info[8] != 8) // 8bit color component
 		goto FAIL;
 	phase = 3;
